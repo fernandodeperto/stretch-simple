@@ -33,47 +33,65 @@ print "starting experiment: $experiment_name\n";
 print "experiment version " . git_version() . "\n";
 print "batch-simulator version " . git_version($config->param('paths.scheduler')) . "\n";
 
+print "saving speedup data\n";
 my @platform_levels = $config->param('parameters.platform_levels');
-my @platform_latencies = $config->param('parameters.platform_latencies');
-my $platform_file_name = "$experiment_path/platform.xml";
-
-print "generating speedup data\n";
+my @platform_speedup = $config->param('parameters.platform_speedup');
 my $platform = Platform->new(\@platform_levels);
-$platform->build_platform_xml(\@platform_latencies);
-$platform->save_platform_xml($platform_file_name);
-$platform->generate_speedup($config->param('paths.speedup_benchmark'), $platform_file_name, $config->param('paths.replay_script'));
-#$platform->set_speedup(\@platform_latencies);
+$platform->set_speedup(\@platform_speedup);
 
 my $platform_string = join('-', @platform_levels);
 my $platform_speedup_string = join(',', $platform->speedup());
 
-my @variants = (
-	Basic->new(),
-	#BestEffortContiguous->new(),
-	#ForcedContiguous->new(),
-	#BestEffortLocal->new($platform),
-	#ForcedLocal->new($platform),
-	#BestEffortPlatform->new($platform),
-	#ForcedPlatform->new($platform),
-	#BestEffortPlatform->new($platform, mode => SMALLEST_FIRST),
-	#ForcedPlatform->new($platform, mode => SMALLEST_FIRST),
-	#BestEffortPlatform->new($platform, mode => BIGGEST_FIRST),
-	#ForcedPlatform->new($platform, mode => BIGGEST_FIRST),
-);
-
-my $variant_id = 0;
+my $variant = Basic->new();
 my $schedule_script = $config->param('paths.schedule_script');
 my $swf_file_name = $config->param('paths.swf_file');
 my $jobs_number = $config->param('parameters.jobs_number');
 my $results_file_name = "$experiment_path/$experiment_name-$experiment_id.csv";
 
-my $result = `$schedule_script $swf_file_name $jobs_number $variant_id $platform_string $platform_speedup_string $experiment_path`;
-#write_result();
-print $result, "\n";
+my $trace = Trace->new_from_swf($swf_file_name);
+$trace->remove_large_jobs($platform->processors_number());
+$trace->reset_jobs_numbers();
+$trace->fix_submit_times();
+$trace->keep_first_jobs($jobs_number);
 
-sub write_result {
+my $schedule = Backfilling->new($variant, $platform, $trace);
+$schedule->run();
+write_results();
+
+sub write_results {
+	my $jobs = $trace->jobs();
+
 	open(my $file, '>', $results_file_name);
-	print $file $result, "\n";
-	close($file);
-}
 
+	print $file join(' ', (
+			"JOB_NUMBER",
+			"SUBMIT_TIME",
+			"WAIT_TIME",
+			"RUN_TIME",
+			"REQUESTED_TIME",
+			"BSLD",
+			"AVG_BSLD",
+	)) . "\n";
+
+	my $total_bounded_stretch = 0;
+	my $processed_jobs = 0;
+	my $stretch_bound = $config->param('parameters.stretch_bound');
+
+	for my $job (@{$jobs}) {
+		$total_bounded_stretch += $job->bounded_stretch($stretch_bound);
+		$processed_jobs++;
+
+		print $file join(' ', (
+			$job->job_number(),
+			$job->submit_time(),
+			$job->wait_time(),
+			$job->run_time(),
+			$job->requested_time(),
+			$job->bounded_stretch($stretch_bound),
+			$total_bounded_stretch/$processed_jobs,
+		)) . "\n";
+	}
+
+	close($file);
+	return;
+}
