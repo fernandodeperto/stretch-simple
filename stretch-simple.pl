@@ -65,6 +65,7 @@ sub write_results {
 
 	print $file join(' ', (
 			"JOB_NUMBER",
+			"CPUS_NUMBER",
 			"SUBMIT_TIME",
 			"WAIT_TIME",
 			"RUN_TIME",
@@ -83,6 +84,7 @@ sub write_results {
 
 		print $file join(' ', (
 			$job->job_number(),
+			$job->requested_cpus(),
 			$job->submit_time(),
 			$job->wait_time(),
 			$job->run_time(),
