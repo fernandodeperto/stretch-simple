@@ -53,6 +53,7 @@ $trace->remove_large_jobs($platform->processors_number());
 $trace->reset_jobs_numbers();
 $trace->fix_submit_times();
 $trace->keep_first_jobs($jobs_number);
+$trace->write_to_file('output.swf');
 
 my $schedule = Backfilling->new($variant, $platform, $trace);
 $schedule->run();
